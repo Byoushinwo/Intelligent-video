@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 数据库服务
+  postgres_db:
+    image: postgres:15-alpine  # 使用官方的 PostgreSQL 15 镜像
+    container_name: postgres_db_video
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/ # 将数据持久化到 volume
+    environment:
+      - POSTGRES_USER=myuser
+      - POSTGRES_PASSWORD=mypassword
+      - POSTGRES_DB=videodb
+    ports:
+      - "5432:5432" # 将容器的 5432 端口映射到宿主机的 5432 端口
+    networks:
+      - video_network
+
+  # Redis 服务 (用于 Celery)
+  redis_broker:
+    image: redis:7-alpine # 使用官方的 Redis 7 镜像
+    container_name: redis_broker_video
+    ports:
+      - "6379:6379"
+    networks:
+      - video_network
+
+  # FastAPI API 服务
+  api_server:
+    build:
+      context: ./backend  # 使用 backend 目录下的 Dockerfile 来构建镜像
+    container_name: api_server_video
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend:/app   # 将本地 backend 目录挂载到容器的 /app 目录，实现代码热重载
+      - ./media:/media # 将本地 media 目录挂载到容器的 /media 目录
+    ports:
+      - "8000:8000"
+    environment:
+      - POSTGRES_URL=postgresql://myuser:mypassword@postgres_db:5432/videodb
+      - REDIS_URL=redis://redis_broker:6379/0
+    depends_on: # 确保在 api_server 启动前，数据库和 Redis 先启动
+      - postgres_db
+      - redis_broker
+    networks:
+      - video_network
+
+  # Celery Worker 服务
+  celery_worker:
+    build:
+      context: ./backend
+    container_name: celery_worker_video
+    command: celery -A app.tasks.worker worker --loglevel=info
+    volumes:
+      - ./backend:/app
+      - ./media:/media
+    environment:
+      - POSTGRES_URL=postgresql://myuser:mypassword@postgres_db:5432/videodb
+      - REDIS_URL=redis://redis_broker:6379/0
+    depends_on:
+      - redis_broker
+      - postgres_db
+    networks:
+      - video_network
+
+# 定义数据卷，用于持久化 PostgreSQL 的数据
+volumes:
+  postgres_data:
+
+# 定义一个网络，让所有容器可以互相通信
+networks:
+  video_network:
+    driver: bridge

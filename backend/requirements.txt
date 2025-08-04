@@ -1,0 +1,6 @@
+fastapi[all]
+sqlalchemy
+psycopg2-binary  # PostgreSQL 的 Python 驱动
+pydantic-settings
+celery[redis]    # 安装 Celery 及其 Redis 依赖
+python-dotenv

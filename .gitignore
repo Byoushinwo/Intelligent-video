@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+pip-wheel-metadata/
+*.egg-info/
+.env
+
+# VS Code
+.vscode/
+
+# Docker
+# (我们目前不需要忽略 Docker 相关文件，但保留以备后用)
+
+# Media files
+# 我们希望 media 目录存在，但不想把里面的具体文件提交到仓库
+# 这样其他开发者 clone 项目后就知道需要这个目录
+media/*
+!media/.gitkeep
+
+# IDE files
+.idea/
+
+# Mac files
+.DS_Store
