@@ -1,6 +1,35 @@
 # 使用 Docker Compose 3.8 版本语法
 version: '3.8'
 
+# 通用配置 - 可在多个服务间共享的配置
+x-common-env: &common-env
+  POSTGRES_URL: postgresql://myuser:mypassword@postgres_db:5432/videodb
+  REDIS_URL: redis://redis_broker:6379/0
+  CHROMA_HOST: vector_db
+  CHROMA_PORT: 8000
+  ELASTICSEARCH_HOSTS: http://search_engine:9200 
+  HF_ENDPOINT: https://hf-mirror.com
+  HF_HOME: /root/.cache/huggingface
+
+# 后端服务共享配置
+x-backend-service: &backend-service
+  build:
+    context: ./backend
+  volumes:
+    - ./backend:/app
+    - ./media:/media
+  networks:
+    - video_network
+  depends_on:
+    postgres_db:
+      condition: service_healthy
+    redis_broker:
+      condition: service_healthy
+    vector_db:
+      condition: service_started
+    search_engine: 
+      condition: service_healthy
+
 services:
   # ---------------------------------
   #  1. PostgreSQL 数据库服务 (postgres_db)
@@ -12,7 +41,7 @@ services:
       - postgres_data:/var/lib/postgresql/data/
     environment:
       - POSTGRES_USER=myuser
-      - POSTG-RES_PASSWORD=mypassword
+      - POSTGRES_PASSWORD=mypassword
       - POSTGRES_DB=videodb
     ports:
       - "5432:5432"
@@ -47,65 +76,68 @@ services:
     image: chromadb/chroma:latest
     container_name: vector_db_video
     volumes:
-      - chroma_data:/chroma/chroma
+      - chroma_data:/data
     ports:
       - "8001:8000"
+    environment:
+      - ALLOW_RESET=true
+      - CHROMA_SERVER_HOST=0.0.0.0
+      - CHROMA_SERVER_HTTP_PORT=8000
     networks:
       - video_network
 
   # ---------------------------------
-  #  4. FastAPI API 服务 (api_server)
+  # 4. Elasticsearch 搜索引擎服务
+  # ---------------------------------
+  search_engine:
+    image: elasticsearch:8.11.3
+    container_name: search_engine_video
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false # 开发环境禁用安全特性，简化配置
+      - ELASTIC_PASSWORD=your_password # 8.x 版本即使禁用安全也需要此项
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    networks:
+      - video_network
+    healthcheck:
+      # 等待集群状态变为 yellow (至少主分片可用)
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health?wait_for_status=yellow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s # ES 启动较慢，给足启动时间
+
+  # ---------------------------------
+  #  5. FastAPI API 服务 (api_server)
   # ---------------------------------
   api_server:
-    build:
-      context: ./backend
+    <<: *backend-service # 引用共享配置
     container_name: api_server_video
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-    volumes:
-      - ./backend:/app
-      - ./media:/media
     ports:
       - "8000:8000"
     environment:
-      - POSTGRES_URL=postgresql://myuser:mypassword@postgres_db:5432/videodb
-      - REDIS_URL=redis://redis_broker:6379/0
-      - CHROMA_HOST=vector_db
-      - CHROMA_PORT=8000
-      - HF_ENDPOINT=https://hf-mirror.com
-      - HF_HOME=/root/.cache/huggingface
-    depends_on:
-      postgres_db:
-        condition: service_healthy
-      redis_broker:
-        condition: service_healthy
-    networks:
-      - video_network
+      <<: *common-env # 引用共享环境变量
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   # ---------------------------------
-  #  5. Celery Worker 服务 (celery_worker)
+  #  6. Celery Worker 服务 (celery_worker)
   # ---------------------------------
   celery_worker:
-    build:
-      context: ./backend
+    <<: *backend-service # 引用共享配置
     container_name: celery_worker_video
     command: celery -A app.tasks.worker worker --loglevel=info
-    volumes:
-      - ./backend:/app
-      - ./media:/media
     environment:
-      - POSTGRES_URL=postgresql://myuser:mypassword@postgres_db:5432/videodb
-      - REDIS_URL=redis://redis_broker:6379/0
-      - CHROMA_HOST=vector_db
-      - CHROMA_PORT=8000
-      - HF_ENDPOINT=https://hf-mirror.com
-      - HF_HOME=/root/.cache/huggingface
-    # 使用最简单的列表格式，只依赖容器启动顺序
-    depends_on:
-      - postgres_db
-      - redis_broker
-      - vector_db
-    networks:
-      - video_network
+      <<: *common-env # 引用共享环境变量
 
 # ---------------------------------
 #  数据卷定义
@@ -113,6 +145,7 @@ services:
 volumes:
   postgres_data:
   chroma_data:
+  es_data:
 
 # ---------------------------------
 #  网络定义

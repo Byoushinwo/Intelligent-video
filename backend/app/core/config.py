@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     # ChromaDB 配置
     CHROMA_HOST: str = "localhost"
     CHROMA_PORT: int = 8001
+    
+    # Elasticsearch 配置
+    ELASTICSEARCH_HOSTS: str
 
     # Pydantic-settings 会自动读取环境变量并填充这些字段
     class Config:

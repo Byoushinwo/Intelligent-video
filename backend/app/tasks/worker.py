@@ -1,3 +1,4 @@
+import asyncio 
 from celery import Celery, states
 from celery.exceptions import Ignore
 from app.core.config import settings
@@ -7,6 +8,7 @@ from app.models.subtitle import Subtitle
 from app.services.video_processing import extract_audio, extract_frames, VideoProcessingError
 from app.services.ai_models import models_loader, DEVICE
 from app.services.vector_db_service import vector_db_service
+from app.services.search_engine_service import search_engine_service 
 from pathlib import Path
 from PIL import Image
 import torch
@@ -15,6 +17,20 @@ import torch
 celery_app = Celery("worker", broker=settings.REDIS_URL, backend=settings.REDIS_URL)
 celery_app.conf.task_routes = {"app.tasks.worker.*": "main-queue"}
 
+# 索引任务
+@celery_app.task(name="index_subtitles")
+def index_subtitles_task(subtitles: list[dict]):
+    """
+    一个异步任务，用于将字幕索引到 Elasticsearch 中。
+    """
+    print(f"收到索引 {len(subtitles)} 条字幕的任务。")
+    async def main():
+        await search_engine_service.create_index_if_not_exists()
+        await search_engine_service.index_subtitles(subtitles)
+    asyncio.run(main())
+    print("字幕成功索引。")
+
+
 @celery_app.task(bind=True, name="process_video", max_retries=3)
 def process_video(self, video_id: int):
     """
@@ -22,7 +38,8 @@ def process_video(self, video_id: int):
     1. 更新状态为 PROCESSING
     2. [阶段二] 提取音频和视频帧
     3. [阶段三] 进行 AI 分析 (语音转文字、图像向量化)
-    4. 更新状态为 COMPLETED 或 FAILED
+    4. [阶段四] 将字幕数据异步索引到 Elasticsearch
+    5. 更新状态为 COMPLETED 或 FAILED
     """
     db = SessionLocal()
     video = db.query(Video).filter(Video.id == video_id).first()
@@ -51,7 +68,6 @@ def process_video(self, video_id: int):
         # --- 3.1 语音转文字 (Whisper) ---
         print(f"Step 3.1: Transcribing audio for video {video.id}...")
         whisper_model = models_loader.get_whisper_model()
-        # 在CPU上运行时，fp16=False 更稳定
         transcription_result = whisper_model.transcribe(str(audio_path), fp16=False)
 
         subtitles_to_add = []
@@ -67,6 +83,15 @@ def process_video(self, video_id: int):
         db.add_all(subtitles_to_add)
         db.commit()
         print(f"Subtitles for video {video.id} saved to database.")
+
+        # 新增派发索引任务的步骤
+        print(f"派发索引任务给 Elasticsearch...")
+        subtitles_for_es = [
+            {"id": sub.id, "video_id": sub.video_id, "start_time": sub.start_time, "text": sub.text}
+            for sub in subtitles_to_add
+        ]
+        index_subtitles_task.delay(subtitles_for_es)
+
 
         # --- 3.2 图像向量化 (CLIP) ---
         print(f"Step 3.2: Embedding frames for video {video.id}...")
@@ -94,7 +119,7 @@ def process_video(self, video_id: int):
                 ids_batch.append(f"video_{video_id}_frame_{frame_path.stem}")
             except Exception as frame_exc:
                 print(f"Could not process frame {frame_path}: {frame_exc}")
-                continue # 跳过损坏的帧
+                continue
 
         vector_db_service.add_embeddings(embeddings_batch, metadatas_batch, ids_batch)
         print(f"Frame embeddings for video {video.id} saved to vector database.")
@@ -107,7 +132,6 @@ def process_video(self, video_id: int):
         return {"status": "Completed"}
 
     except VideoProcessingError as e:
-        # 捕获我们自定义的处理异常
         print(f"A processing error occurred for video {video.id}: {e}")
         video.status = TaskStatus.FAILED
         db.commit()
@@ -115,12 +139,10 @@ def process_video(self, video_id: int):
         raise Ignore()
 
     except Exception as e:
-        # 捕获其他未知异常
         print(f"An unexpected error occurred for video {video.id}: {e}")
         video.status = TaskStatus.FAILED
         db.commit()
         try:
-            # 使用 Celery 的重试机制
             print(f"Retrying task in 60 seconds... (Attempt {self.request.retries + 1} of {self.max_retries})")
             raise self.retry(exc=e, countdown=60)
         except self.MaxRetriesExceededError:
@@ -129,4 +151,4 @@ def process_video(self, video_id: int):
             raise Ignore()
 
     finally:
-        db.close() # 确保数据库会话被关闭
+        db.close()

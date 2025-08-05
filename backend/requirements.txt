@@ -1,14 +1,23 @@
-fastapi[all]
+# --- 基础框架 (精简版) ---
+fastapi
+uvicorn[standard] # uvicorn 及其推荐的依赖
+python-multipart  # 支持文件上传
 sqlalchemy
-psycopg2-binary  # PostgreSQL 的 Python 驱动
+psycopg2-binary
 pydantic-settings
-celery[redis]    # 安装 Celery 及其 Redis 依赖
+celery[redis]
 python-dotenv
-openai-whisper # OpenAI Whisper 的开源实现
-torch           # PyTorch 深度学习框架
-torchvision     # PyTorch 的计算机视觉库
-torchaudio      # PyTorch 的音频库
-transformers    # Hugging Face 库，用于加载 CLIP
-Pillow          # 图像处理库
-chromadb        # ChromaDB 的 Python 客户端
+
+# --- AI & 图像处理 ---
+openai-whisper
+torch
+torchvision
+torchaudio
+transformers
+Pillow
+
+# --- 数据库客户端与其它 ---
+chromadb
 sentence-transformers
+elasticsearch>=8.0.0,<9.0.0
+aiohttp
