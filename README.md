@@ -47,49 +47,71 @@
 - **媒体处理**: FFmpeg
 - **容器化**: Docker, Docker Compose
 
-## **5. 本地部署与运行 (Deployment & Execution)**
+## **5. 本地部署与开发 (Local Deployment & Development)**
+
+本项目的前后端分离，可以独立启动和开发。
 
 ### **5.1. 前提条件**
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) 必须已安装并处于运行状态。
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (用于后端)
+- [Node.js](https://nodejs.org/en) (LTS 版本, 用于前端)
+- [pnpm](https://pnpm.io/) (推荐的前端包管理器)
 
-### **5.2. 启动流程**
+### **5.2. 启动后端服务**
 
-1. **克隆仓库**
-    
-    Bash
-    
-    ```
+后端所有服务均已容器化，可一键启动。
+
+1.  **克隆仓库**
+    ```bash
     git clone https://github.com/Byoushinwo/Intelligent-video.git
-    cd my-video-platform
+    cd Intelligent-video
     ```
-    
-2. **构建并启动服务**
-    
-    Bash
-    
-    ```
+
+2.  **构建并启动后端服务**
+    ```bash
     docker-compose up --build
     ```
-    
-    **注意**: 首次执行此命令将触发一个长时间的构建过程（预计20-40分钟），期间会下载所有基础镜像、安装系统与Python依赖，并预先下载和缓存所需的AI模型。此过程为一次性操作。当所有服务的健康检查通过且日志稳定后，系统即启动完成。
-    
+    **注意**: 首次执行此命令将触发一个长时间的构建过程（预计20-40分钟），以准备所有依赖和AI模型。当所有服务的健康检查通过且日志稳定后，后端即启动完成。
 
-### **5.3. 停止服务**
+3.  **停止后端服务**
+    在项目根目录终端中，按下 `Ctrl + C`，然后执行：
+    ```bash
+    docker-compose down
+    ```
 
-在项目根目录终端中，按下 `Ctrl + C`，然后执行：
+### **5.3. ✨ 前端开发与调试 (Frontend Development)**
 
-Bash
+1.  **进入前端目录**
+    打开一个**新的终端窗口**，进入 `frontend` 目录：
+    ```bash
+    cd frontend
+    ```
 
-```
-docker-compose down
-```
+2.  **安装依赖**
+    推荐使用 `pnpm` 进行安装。
+    ```bash
+    pnpm install
+    ```
+    *(如果这是您第一次使用 pnpm, 您可能需要先通过 `npm install -g pnpm` 来全局安装它)*
 
-## **6. API 端点**
+3.  **启动前端开发服务器**
+    ```bash
+    pnpm dev
+    ```
+    服务启动后，终端会显示访问地址，通常是 `http://localhost:5173`。
+
+4.  **开始调试**
+    *   **热更新**: 在 VS Code 中修改 `frontend/src/` 目录下的任何代码并保存，浏览器页面将会自动刷新。
+    *   **API 交互**: 确保后端服务正在运行。前端应用会通过 `http://127.0.0.1:8000` 与后端 API 进行通信。
+    *   **浏览器开发者工具**: 按下 `F12` 打开开发者工具，使用 `Console` 标签页查看日志和错误，使用 `Network` 标签页监视 API 请求和响应。
+
+## **6. API 端点 (API Endpoints)**
+
+所有 API 均以 `http://127.0.0.1:8000` 为基础地址。
 
 - `POST /api/videos/upload`: 上传视频文件以启动分析流程。
 - `GET /api/videos/`: 获取所有视频的元数据列表。
 - `GET /api/videos/{video_id}`: 获取指定视频的元数据及其全文字幕。
-- `GET /api/search/text`: 文本检索接口，参数: `q` (string)。
-- `GET /api/search/image-by-text`: 跨模态检索接口，参数: `q` (string, English)。
+- `GET /api/search/text?q={query}`: 文本检索接口。
+- `GET /api/search/image-by-text?q={query}`: 跨模态检索接口 (查询参数 `q` 需为英文)。
 - `GET /health`: 应用健康检查端点。
