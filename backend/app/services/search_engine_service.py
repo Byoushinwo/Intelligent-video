@@ -20,7 +20,7 @@ class SearchEngineService:
             }
         }
 
-    # --- ✨ 绕过有问题的 exists() 检查
+    # ---  绕过有问题的 exists() 检查
     async def create_index_if_not_exists(self):
         """
         直接尝试创建索引，如果已存在则捕获并忽略异常。

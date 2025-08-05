@@ -2,6 +2,7 @@ import enum
 from sqlalchemy import Column, Integer, String, Enum as SAEnum, DateTime
 from sqlalchemy.sql import func
 from app.database.base import Base
+from . import subtitle
 
 class TaskStatus(str, enum.Enum):
     PENDING = "PENDING"

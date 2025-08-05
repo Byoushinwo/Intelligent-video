@@ -79,3 +79,22 @@ def extract_frames(video_path: Path, interval_seconds: int = 5) -> Path:
         print(f"FFmpeg frame extraction failed. Return code: {e.returncode}")
         print("FFmpeg stderr:", e.stderr)
         raise VideoProcessingError(f"Frame extraction failed: {e.stderr}")
+    
+# 提取单张指定帧的函数
+def extract_specific_frame(video_path: Path, frame_time: float) -> Path:
+    frame_dir = video_path.parent / video_path.stem
+    frame_dir.mkdir(exist_ok=True)
+    cover_path = frame_dir / "cover.jpg"
+
+    command = [
+        "ffmpeg", "-i", str(video_path), "-ss", str(frame_time),
+        "-vframes", "1", "-q:v", "2", "-y", str(cover_path)
+    ]
+    try:
+        # 在后台运行，我们不关心输出，除非出错
+        subprocess.run(command, check=True, capture_output=True, text=True)
+        return cover_path
+    except subprocess.CalledProcessError as e:
+        # 如果出错，我们会看到这个日志
+        print(f"Cover frame extraction failed: {e.stderr}")
+        raise VideoProcessingError(f"Cover frame extraction failed: {e.stderr}")
