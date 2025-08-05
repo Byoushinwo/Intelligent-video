@@ -79,7 +79,7 @@
     docker-compose down
     ```
 
-### **5.3. ✨ 前端开发与调试 (Frontend Development)**
+### **5.3. 前端开发与调试 (Frontend Development)**
 
 1.  **进入前端目录**
     打开一个**新的终端窗口**，进入 `frontend` 目录：
