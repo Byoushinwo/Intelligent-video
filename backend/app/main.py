@@ -12,3 +12,7 @@ app.include_router(videos.router, prefix="/api/videos", tags=["Videos"])
 @app.get("/")
 def read_root():
     return {"message": "Welcome to the Video Analysis API"}
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy", "service": "video-api"}

@@ -1,51 +1,89 @@
+# 使用 Docker Compose 3.8 版本语法
 version: '3.8'
 
 services:
-  # PostgreSQL 数据库服务
+  # ---------------------------------
+  #  1. PostgreSQL 数据库服务 (postgres_db)
+  # ---------------------------------
   postgres_db:
-    image: postgres:15-alpine  # 使用官方的 PostgreSQL 15 镜像
+    image: postgres:15-alpine
     container_name: postgres_db_video
     volumes:
-      - postgres_data:/var/lib/postgresql/data/ # 将数据持久化到 volume
+      - postgres_data:/var/lib/postgresql/data/
     environment:
       - POSTGRES_USER=myuser
-      - POSTGRES_PASSWORD=mypassword
+      - POSTG-RES_PASSWORD=mypassword
       - POSTGRES_DB=videodb
     ports:
-      - "5432:5432" # 将容器的 5432 端口映射到宿主机的 5432 端口
+      - "5432:5432"
     networks:
       - video_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myuser -d videodb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
-  # Redis 服务 (用于 Celery)
+  # ---------------------------------
+  #  2. Redis 服务 (redis_broker)
+  # ---------------------------------
   redis_broker:
-    image: redis:7-alpine # 使用官方的 Redis 7 镜像
+    image: redis:7-alpine
     container_name: redis_broker_video
     ports:
       - "6379:6379"
     networks:
       - video_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
-  # FastAPI API 服务
+  # ---------------------------------
+  #  3. ChromaDB 向量数据库服务 (vector_db)
+  # ---------------------------------
+  vector_db:
+    image: chromadb/chroma:latest
+    container_name: vector_db_video
+    volumes:
+      - chroma_data:/chroma/chroma
+    ports:
+      - "8001:8000"
+    networks:
+      - video_network
+
+  # ---------------------------------
+  #  4. FastAPI API 服务 (api_server)
+  # ---------------------------------
   api_server:
     build:
-      context: ./backend  # 使用 backend 目录下的 Dockerfile 来构建镜像
+      context: ./backend
     container_name: api_server_video
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
-      - ./backend:/app   # 将本地 backend 目录挂载到容器的 /app 目录，实现代码热重载
-      - ./media:/media # 将本地 media 目录挂载到容器的 /media 目录
+      - ./backend:/app
+      - ./media:/media
     ports:
       - "8000:8000"
     environment:
       - POSTGRES_URL=postgresql://myuser:mypassword@postgres_db:5432/videodb
       - REDIS_URL=redis://redis_broker:6379/0
-    depends_on: # 确保在 api_server 启动前，数据库和 Redis 先启动
-      - postgres_db
-      - redis_broker
+      - CHROMA_HOST=vector_db
+      - CHROMA_PORT=8000
+      - HF_ENDPOINT=https://hf-mirror.com
+      - HF_HOME=/root/.cache/huggingface
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      redis_broker:
+        condition: service_healthy
     networks:
       - video_network
 
-  # Celery Worker 服务
+  # ---------------------------------
+  #  5. Celery Worker 服务 (celery_worker)
+  # ---------------------------------
   celery_worker:
     build:
       context: ./backend
@@ -57,17 +95,28 @@ services:
     environment:
       - POSTGRES_URL=postgresql://myuser:mypassword@postgres_db:5432/videodb
       - REDIS_URL=redis://redis_broker:6379/0
+      - CHROMA_HOST=vector_db
+      - CHROMA_PORT=8000
+      - HF_ENDPOINT=https://hf-mirror.com
+      - HF_HOME=/root/.cache/huggingface
+    # 使用最简单的列表格式，只依赖容器启动顺序
     depends_on:
-      - redis_broker
       - postgres_db
+      - redis_broker
+      - vector_db
     networks:
       - video_network
 
-# 定义数据卷，用于持久化 PostgreSQL 的数据
+# ---------------------------------
+#  数据卷定义
+# ---------------------------------
 volumes:
   postgres_data:
+  chroma_data:
 
-# 定义一个网络，让所有容器可以互相通信
+# ---------------------------------
+#  网络定义
+# ---------------------------------
 networks:
   video_network:
     driver: bridge
