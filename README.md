@@ -60,7 +60,7 @@
     Bash
     
     ```
-    git clone https://github.com/YourUsername/my-video-platform.git
+    git clone https://github.com/Byoushinwo/Intelligent-video.git
     cd my-video-platform
     ```
     
